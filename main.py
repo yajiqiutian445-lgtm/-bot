@@ -1,9 +1,35 @@
 import os
 import random
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+# ---------------------------------------------------------
+# Keep-Alive用 Webサーバー (Render Web Service & UptimeRobot用)
+# ---------------------------------------------------------
+class KeepAliveHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        response_text = "<h1>✅ Web service is running!</h1><p>ちいはや鯖 Botは正常に稼働中です。</p>"
+        self.wfile.write(response_text.encode('utf-8'))
+
+    def log_message(self, format, *args):
+        # アクセスログ出力の抑制
+        return
+
+def run_web_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
+    print(f"Webサーバーを開始しました (Port: {port})")
+    server.serve_forever()
+
+# Webサーバーを別スレッドでバックグラウンド起動
+threading.Thread(target=run_web_server, daemon=True).start()
 
 # ---------------------------------------------------------
 # Botの初期化とインテント設定
@@ -66,15 +92,12 @@ class TicketView(discord.ui.View):
             category=category
         )
         
-        # チケットチャンネル内部にお問い合わせ案内と閉じるボタンを送信
         embed = discord.Embed(
             title="📩 お問い合わせ窓口",
             description=f"{interaction.user.mention}さん、お問い合わせ内容をメッセージで送信してください。\nサポート対応が完了したら下のボタンを押して閉じてください。",
             color=discord.Color.blue()
         )
         await channel.send(embed=embed, view=TicketCloseView())
-        
-        # 画面通知
         await interaction.response.send_message(f"専用のお問い合わせチャンネルを作成しました: {channel.mention}", ephemeral=True)
 
 class TicketCloseView(discord.ui.View):
@@ -110,10 +133,8 @@ class GamePanelView(discord.ui.View):
         await interaction.response.send_message(f"🎴 今日の運勢: **{res}**", ephemeral=True)
 
 # ---------------------------------------------------------
-# 4. 全100個のスラッシュコマンド定義
+# 4. 全100個のスラッシュコマンド teigi
 # ---------------------------------------------------------
-
-# --- 💰 経済・育成系 (1〜15) ---
 @bot.tree.command(name="work", description="お仕事をしてコインを稼ぐ")
 async def work(interaction: discord.Interaction):
     earned = random.randint(100, 1000)
@@ -178,8 +199,6 @@ async def property_cmd(interaction: discord.Interaction):
 async def pet(interaction: discord.Interaction):
     await interaction.response.send_message("🐶 ペットのポチ（Lv.3）は元気に遊んでいます！")
 
-
-# --- 🎲 ゲーム・エンタメ系 (16〜40) ---
 @bot.tree.command(name="dice", description="サイコロを振る")
 async def dice(interaction: discord.Interaction):
     await interaction.response.send_message(f"🎲 出た目: **{random.randint(1, 6)}**")
@@ -290,8 +309,6 @@ async def darts(interaction: discord.Interaction):
 async def slot_custom(interaction: discord.Interaction):
     await interaction.response.send_message("🎰 カスタムスロット回転！ [🔥|🔥|🔥] 激熱！")
 
-
-# --- 💬 コミュニケーション・ユーティリティ系 (41〜70) ---
 @bot.tree.command(name="ping", description="Botの応答速度を確認する")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
@@ -429,8 +446,6 @@ async def ascii_cmd(interaction: discord.Interaction, text: str):
 async def morse(interaction: discord.Interaction, text: str):
     await interaction.response.send_message(f"📡 モールス信号変換: `.- -... -.-.`")
 
-
-# --- 👑 モデレーション・管理系 (71〜100) ---
 @bot.tree.command(name="report", description="違反ユーザーや問題を運営に通報する")
 async def report(interaction: discord.Interaction, target: discord.Member, reason: str, proof: str = "なし"):
     embed = discord.Embed(title="🚨 通報を受信しました", color=discord.Color.red())
@@ -619,7 +634,6 @@ async def backup(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 async def reload(interaction: discord.Interaction):
     await interaction.response.send_message("🔄 システムコマンド・キャッシュをリロードしました。")
-
 
 # ---------------------------------------------------------
 # Bot起動処理
