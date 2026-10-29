@@ -43,6 +43,7 @@ class ChihayaBot(commands.Bot):
     async def setup_hook(self):
         # UI Viewsの永続化登録
         self.add_view(VerifyView(role_id=None))
+        self.add_view(RolePanelView(role_id=None))
         self.add_view(TicketView())
         self.add_view(TicketCloseView())
         self.add_view(GamePanelView())
@@ -74,7 +75,33 @@ class VerifyView(discord.ui.View):
             await interaction.response.send_message("エラー: 設定されたロールが見つかりませんでした。サーバー管理者に連絡してください。", ephemeral=True)
 
 # ---------------------------------------------------------
-# 2. チケット機能 (Ticket System UI)
+# 2. ロールパネル機能 (Role Panel UI)
+# ---------------------------------------------------------
+class RolePanelView(discord.ui.View):
+    def __init__(self, role_id: int = None):
+        super().__init__(timeout=None)
+        self.role_id = role_id
+
+    @discord.ui.button(label="🎭 ロールを取得 / 解除する", style=discord.ButtonStyle.blurple, custom_id="role_panel_button_persistent")
+    async def toggle_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.role_id:
+            await interaction.response.send_message("エラー: 対象のロールが指定されていません。", ephemeral=True)
+            return
+
+        role = interaction.guild.get_role(self.role_id)
+        if not role:
+            await interaction.response.send_message("エラー: 該当するロールが存在しません。", ephemeral=True)
+            return
+
+        if role in interaction.user.roles:
+            await interaction.user.remove_roles(role)
+            await interaction.response.send_message(f"➖ `{role.name}` ロールを解除しました。", ephemeral=True)
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(f"➕ `{role.name}` ロールが付与されました！", ephemeral=True)
+
+# ---------------------------------------------------------
+# 3. チケット機能 (Ticket System UI)
 # ---------------------------------------------------------
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -114,7 +141,7 @@ class TicketCloseView(discord.ui.View):
         await interaction.channel.delete()
 
 # ---------------------------------------------------------
-# 3. ゲームパネル機能 (Game Panel UI)
+# 4. ゲームパネル機能 (Game Panel UI)
 # ---------------------------------------------------------
 class GamePanelView(discord.ui.View):
     def __init__(self):
@@ -136,7 +163,7 @@ class GamePanelView(discord.ui.View):
         await interaction.response.send_message(f"🎴 今日の運勢: **{res}**", ephemeral=True)
 
 # ---------------------------------------------------------
-# 4. 全100個のスラッシュコマンド定義
+# 5. スラッシュコマンド定義
 # ---------------------------------------------------------
 
 # --- 💰 経済・育成系 (1〜15) ---
@@ -548,13 +575,23 @@ async def role_remove(interaction: discord.Interaction, member: discord.Member, 
     await member.remove_roles(role)
     await interaction.response.send_message(f"➖ {member.mention} から {role.name} ロールを剥奪しました。")
 
-# 【ご要望コマンド】/setup_verify [付与ロール] [タイトル] [説明]
+# 【新規ご要望コマンド】/role_panel [付与ロール] [タイトル] [説明]
+@bot.tree.command(name="role_panel", description="指定したロールの配布用パネルを設置する (トグル式)")
+@app_commands.checks.has_permissions(administrator=True)
+async def role_panel(interaction: discord.Interaction, role: discord.Role, title: str, description: str):
+    formatted_description = description.replace("\\n", "\n")
+    embed = discord.Embed(
+        title=title,
+        description=formatted_description,
+        color=discord.Color.purple()
+    )
+    await interaction.channel.send(embed=embed, view=RolePanelView(role_id=role.id))
+    await interaction.response.send_message(f"ロールパネルを設置しました！（対象ロール: `{role.name}`）", ephemeral=True)
+
 @bot.tree.command(name="setup_verify", description="付与ロール・タイトル・説明をカスタム指定して認証パネルを設置する")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_verify(interaction: discord.Interaction, role: discord.Role, title: str, description: str):
-    # 改行コード(\n)の入力をそのまま改行として処理
     formatted_description = description.replace("\\n", "\n")
-    
     embed = discord.Embed(
         title=title,
         description=formatted_description,
