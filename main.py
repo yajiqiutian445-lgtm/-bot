@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 # ---------------------------------------------------------
-# Keep-Alive用 Webサーバー (Render Web Service & UptimeRobot用)
+# Keep-Alive用 Webサーバー (Render 「Your service is live」 対策)
 # ---------------------------------------------------------
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -19,14 +19,17 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.wfile.write(response_text.encode('utf-8'))
 
     def log_message(self, format, *args):
+        # ログを簡略化してスッキリさせる
         return
 
 def run_web_server():
+    # Renderから割り当てられるPORT環境変数を確実に取得（デフォルトは8080）
     port = int(os.getenv("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
-    print(f"Webサーバーを開始しました (Port: {port})")
+    print(f"Webサーバーがポート {port} で起動しました。")
     server.serve_forever()
 
+# Webサーバーをバックグラウンドスレッドで実行
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ---------------------------------------------------------
@@ -163,7 +166,7 @@ class GamePanelView(discord.ui.View):
         await interaction.response.send_message(f"🎴 今日の運勢: **{res}**", ephemeral=True)
 
 # ---------------------------------------------------------
-# 5. スラッシュコマンド定義
+# 5. 全100個のスラッシュコマンド定義
 # ---------------------------------------------------------
 
 # --- 💰 経済・育成系 (1〜15) ---
@@ -575,7 +578,6 @@ async def role_remove(interaction: discord.Interaction, member: discord.Member, 
     await member.remove_roles(role)
     await interaction.response.send_message(f"➖ {member.mention} から {role.name} ロールを剥奪しました。")
 
-# 【新規ご要望コマンド】/role_panel [付与ロール] [タイトル] [説明]
 @bot.tree.command(name="role_panel", description="指定したロールの配布用パネルを設置する (トグル式)")
 @app_commands.checks.has_permissions(administrator=True)
 async def role_panel(interaction: discord.Interaction, role: discord.Role, title: str, description: str):
