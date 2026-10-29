@@ -19,7 +19,6 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.wfile.write(response_text.encode('utf-8'))
 
     def log_message(self, format, *args):
-        # アクセスログ出力の抑制
         return
 
 def run_web_server():
@@ -28,7 +27,6 @@ def run_web_server():
     print(f"Webサーバーを開始しました (Port: {port})")
     server.serve_forever()
 
-# Webサーバーを別スレッドでバックグラウンド起動
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ---------------------------------------------------------
@@ -43,12 +41,11 @@ class ChihayaBot(commands.Bot):
         super().__init__(command_prefix="/", intents=intents)
 
     async def setup_hook(self):
-        # UI Viewsの永続化登録
-        self.add_view(VerifyView())
+        # ロールID保持のためのView永続化
+        self.add_view(VerifyView(role_id=None))
         self.add_view(TicketView())
         self.add_view(TicketCloseView())
         self.add_view(GamePanelView())
-        # スラッシュコマンドをDiscord側へ同期
         await self.tree.sync()
         print("スラッシュコマンドの同期が完了しました（全100個）。")
 
@@ -58,17 +55,24 @@ bot = ChihayaBot()
 # 1. 認証機能 (Verification UI)
 # ---------------------------------------------------------
 class VerifyView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, role_id: int = None):
         super().__init__(timeout=None)
+        self.role_id = role_id
 
     @discord.ui.button(label="✅ ルールに同意して認証する", style=discord.ButtonStyle.green, custom_id="verify_button_persistent")
     async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        role = discord.utils.get(interaction.guild.roles, name="メンバー")
+        # ボタン押下時に設定されたロールIDから取得、指定がない場合は「メンバー」ロールを探す
+        role = None
+        if self.role_id:
+            role = interaction.guild.get_role(self.role_id)
+        if not role:
+            role = discord.utils.get(interaction.guild.roles, name="メンバー")
+
         if role:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message("認証が完了しました！ちいはや鯖へようこそ！", ephemeral=True)
+            await interaction.response.send_message(f"認証が完了しました！ `{role.name}` ロールを付与しました。ちいはや鯖へようこそ！", ephemeral=True)
         else:
-            await interaction.response.send_message("エラー: 「メンバー」ロールが存在しません。サーバー管理者に連絡してください。", ephemeral=True)
+            await interaction.response.send_message("エラー: 設定されたロールが見つかりませんでした。サーバー管理者に連絡してください。", ephemeral=True)
 
 # ---------------------------------------------------------
 # 2. チケット機能 (Ticket System UI)
@@ -133,8 +137,10 @@ class GamePanelView(discord.ui.View):
         await interaction.response.send_message(f"🎴 今日の運勢: **{res}**", ephemeral=True)
 
 # ---------------------------------------------------------
-# 4. 全100個のスラッシュコマンド teigi
+# 4. 全100個のスラッシュコマンド定義
 # ---------------------------------------------------------
+
+# --- 💰 経済・育成系 (1〜15) ---
 @bot.tree.command(name="work", description="お仕事をしてコインを稼ぐ")
 async def work(interaction: discord.Interaction):
     earned = random.randint(100, 1000)
@@ -199,6 +205,7 @@ async def property_cmd(interaction: discord.Interaction):
 async def pet(interaction: discord.Interaction):
     await interaction.response.send_message("🐶 ペットのポチ（Lv.3）は元気に遊んでいます！")
 
+# --- 🎲 ゲーム・エンタメ系 (16〜40) ---
 @bot.tree.command(name="dice", description="サイコロを振る")
 async def dice(interaction: discord.Interaction):
     await interaction.response.send_message(f"🎲 出た目: **{random.randint(1, 6)}**")
@@ -309,6 +316,7 @@ async def darts(interaction: discord.Interaction):
 async def slot_custom(interaction: discord.Interaction):
     await interaction.response.send_message("🎰 カスタムスロット回転！ [🔥|🔥|🔥] 激熱！")
 
+# --- 💬 コミュニケーション・ユーティリティ系 (41〜70) ---
 @bot.tree.command(name="ping", description="Botの応答速度を確認する")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 Pong! Latency: {round(bot.latency * 1000)}ms")
@@ -446,6 +454,7 @@ async def ascii_cmd(interaction: discord.Interaction, text: str):
 async def morse(interaction: discord.Interaction, text: str):
     await interaction.response.send_message(f"📡 モールス信号変換: `.- -... -.-.`")
 
+# --- 👑 モデレーション・管理系 (71〜100) ---
 @bot.tree.command(name="report", description="違反ユーザーや問題を運営に通報する")
 async def report(interaction: discord.Interaction, target: discord.Member, reason: str, proof: str = "なし"):
     embed = discord.Embed(title="🚨 通報を受信しました", color=discord.Color.red())
@@ -540,16 +549,18 @@ async def role_remove(interaction: discord.Interaction, member: discord.Member, 
     await member.remove_roles(role)
     await interaction.response.send_message(f"➖ {member.mention} から {role.name} ロールを剥奪しました。")
 
-@bot.tree.command(name="setup_verify", description="認証パネルを設置する")
+# 【更新】/verify_panel コマンド：指定したロールを認証時に付与するパネルを設置
+@bot.tree.command(name="verify_panel", description="指定したロールを付与する認証パネルを設置する")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_verify(interaction: discord.Interaction):
+async def verify_panel(interaction: discord.Interaction, role: discord.Role):
     embed = discord.Embed(
         title="【ちいはや鯖】新規参加認証パネル",
-        description="ちいはや鯖へようこそ！\nサーバーを安全に楽しんでいただくため、ルールをご確認のうえ、下の **「✅ ルールに同意して認証する」** ボタンを押してください。\n\n認証が完了すると、`@メンバー` ロールが付与され、すべてのチャンネルが閲覧・発言可能になります。",
+        description=f"ちいはや鯖へようこそ！\nサーバーを安全に楽しんでいただくため、ルールをご確認のうえ、下の **「✅ ルールに同意して認証する」** ボタンを押してください。\n\n認証が完了すると、{role.mention} ロールが付与され、チャンネルが閲覧可能になります。",
         color=discord.Color.blue()
     )
-    await interaction.channel.send(embed=embed, view=VerifyView())
-    await interaction.response.send_message("認証パネルを設置しました。", ephemeral=True)
+    # 選択したロールのIDをVerifyViewに渡してパネルを配置
+    await interaction.channel.send(embed=embed, view=VerifyView(role_id=role.id))
+    await interaction.response.send_message(f"認証パネルを設置しました。（付与ロール: `{role.name}`）", ephemeral=True)
 
 @bot.tree.command(name="setup_ticket", description="チケットパネルを設置する")
 @app_commands.checks.has_permissions(administrator=True)
