@@ -19,17 +19,14 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
         self.wfile.write(response_text.encode('utf-8'))
 
     def log_message(self, format, *args):
-        # ログを簡略化してスッキリさせる
         return
 
 def run_web_server():
-    # Renderから割り当てられるPORT環境変数を確実に取得（デフォルトは8080）
     port = int(os.getenv("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
     print(f"Webサーバーがポート {port} で起動しました。")
     server.serve_forever()
 
-# Webサーバーをバックグラウンドスレッドで実行
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ---------------------------------------------------------
@@ -44,7 +41,6 @@ class ChihayaBot(commands.Bot):
         super().__init__(command_prefix="/", intents=intents)
 
     async def setup_hook(self):
-        # UI Viewsの永続化登録
         self.add_view(VerifyView(role_id=None))
         self.add_view(RolePanelView(role_id=None))
         self.add_view(TicketView())
@@ -56,7 +52,7 @@ class ChihayaBot(commands.Bot):
 bot = ChihayaBot()
 
 # ---------------------------------------------------------
-# 1. 認証機能 (Verification UI)
+# 1. 認証機能 (Verification UI) - 権限エラー対策付き
 # ---------------------------------------------------------
 class VerifyView(discord.ui.View):
     def __init__(self, role_id: int = None):
@@ -71,14 +67,20 @@ class VerifyView(discord.ui.View):
         if not role:
             role = discord.utils.get(interaction.guild.roles, name="メンバー")
 
-        if role:
+        if not role:
+            await interaction.response.send_message("エラー: 設定されたロールが見つかりませんでした。サーバー管理者に連絡してください。", ephemeral=True)
+            return
+
+        try:
             await interaction.user.add_roles(role)
             await interaction.response.send_message(f"認証が完了しました！ `{role.name}` ロールを付与しました。", ephemeral=True)
-        else:
-            await interaction.response.send_message("エラー: 設定されたロールが見つかりませんでした。サーバー管理者に連絡してください。", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ エラー: ボットにロールを付与する権限がないか、付与しようとしたロールがボット自身のロールよりも上に位置しています。サーバー管理者にお知らせください。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 予期せぬエラーが発生しました: `{e}`", ephemeral=True)
 
 # ---------------------------------------------------------
-# 2. ロールパネル機能 (Role Panel UI)
+# 2. ロールパネル機能 (Role Panel UI) - 権限エラー対策付き
 # ---------------------------------------------------------
 class RolePanelView(discord.ui.View):
     def __init__(self, role_id: int = None):
@@ -96,12 +98,17 @@ class RolePanelView(discord.ui.View):
             await interaction.response.send_message("エラー: 該当するロールが存在しません。", ephemeral=True)
             return
 
-        if role in interaction.user.roles:
-            await interaction.user.remove_roles(role)
-            await interaction.response.send_message(f"➖ `{role.name}` ロールを解除しました。", ephemeral=True)
-        else:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"➕ `{role.name}` ロールが付与されました！", ephemeral=True)
+        try:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message(f"➖ `{role.name}` ロールを解除しました。", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(f"➕ `{role.name}` ロールが付与されました！", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ エラー: ボットにロールを管理する権限がないか、対象ロールがボットのロールより上にあります。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 予期せぬエラーが発生しました: `{e}`", ephemeral=True)
 
 # ---------------------------------------------------------
 # 3. チケット機能 (Ticket System UI)
@@ -673,6 +680,7 @@ async def maintenance(interaction: discord.Interaction, mode: bool):
     await interaction.response.send_message(f"🛠️ メンテナンスモードを **{status}** にしました。")
 
 @bot.tree.command(name="server_stats", description="サーバーの統計データを表示する")
+@app_commands.checks.has_permissions(administrator=True)
 async def server_stats(interaction: discord.Interaction):
     await interaction.response.send_message(f"📊 **サーバー統計**: 参加者 {interaction.guild.member_count}名 | チャンネル数 {len(interaction.guild.channels)}")
 
