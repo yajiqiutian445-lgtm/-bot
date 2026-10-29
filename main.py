@@ -41,7 +41,7 @@ class ChihayaBot(commands.Bot):
         super().__init__(command_prefix="/", intents=intents)
 
     async def setup_hook(self):
-        # ロールID保持のためのView永続化
+        # UI Viewsの永続化登録
         self.add_view(VerifyView(role_id=None))
         self.add_view(TicketView())
         self.add_view(TicketCloseView())
@@ -61,7 +61,6 @@ class VerifyView(discord.ui.View):
 
     @discord.ui.button(label="✅ ルールに同意して認証する", style=discord.ButtonStyle.green, custom_id="verify_button_persistent")
     async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ボタン押下時に設定されたロールIDから取得、指定がない場合は「メンバー」ロールを探す
         role = None
         if self.role_id:
             role = interaction.guild.get_role(self.role_id)
@@ -70,7 +69,7 @@ class VerifyView(discord.ui.View):
 
         if role:
             await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"認証が完了しました！ `{role.name}` ロールを付与しました。ちいはや鯖へようこそ！", ephemeral=True)
+            await interaction.response.send_message(f"認証が完了しました！ `{role.name}` ロールを付与しました。", ephemeral=True)
         else:
             await interaction.response.send_message("エラー: 設定されたロールが見つかりませんでした。サーバー管理者に連絡してください。", ephemeral=True)
 
@@ -549,18 +548,20 @@ async def role_remove(interaction: discord.Interaction, member: discord.Member, 
     await member.remove_roles(role)
     await interaction.response.send_message(f"➖ {member.mention} から {role.name} ロールを剥奪しました。")
 
-# 【更新】/verify_panel コマンド：指定したロールを認証時に付与するパネルを設置
-@bot.tree.command(name="verify_panel", description="指定したロールを付与する認証パネルを設置する")
+# 【ご要望コマンド】/setup_verify [付与ロール] [タイトル] [説明]
+@bot.tree.command(name="setup_verify", description="付与ロール・タイトル・説明をカスタム指定して認証パネルを設置する")
 @app_commands.checks.has_permissions(administrator=True)
-async def verify_panel(interaction: discord.Interaction, role: discord.Role):
+async def setup_verify(interaction: discord.Interaction, role: discord.Role, title: str, description: str):
+    # 改行コード(\n)の入力をそのまま改行として処理
+    formatted_description = description.replace("\\n", "\n")
+    
     embed = discord.Embed(
-        title="【ちいはや鯖】新規参加認証パネル",
-        description=f"ちいはや鯖へようこそ！\nサーバーを安全に楽しんでいただくため、ルールをご確認のうえ、下の **「✅ ルールに同意して認証する」** ボタンを押してください。\n\n認証が完了すると、{role.mention} ロールが付与され、チャンネルが閲覧可能になります。",
+        title=title,
+        description=formatted_description,
         color=discord.Color.blue()
     )
-    # 選択したロールのIDをVerifyViewに渡してパネルを配置
     await interaction.channel.send(embed=embed, view=VerifyView(role_id=role.id))
-    await interaction.response.send_message(f"認証パネルを設置しました。（付与ロール: `{role.name}`）", ephemeral=True)
+    await interaction.response.send_message(f"認証パネルを設置しました！（付与ロール: `{role.name}`）", ephemeral=True)
 
 @bot.tree.command(name="setup_ticket", description="チケットパネルを設置する")
 @app_commands.checks.has_permissions(administrator=True)
